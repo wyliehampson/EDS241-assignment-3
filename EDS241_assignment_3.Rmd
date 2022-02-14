@@ -1,0 +1,95 @@
+---
+title: "EDS241: Assignment 3"
+author: "Wylie Hampson"
+date: '`r format(Sys.time(), "%m/%d/%Y")`'
+output: 
+  pdf_document:
+    toc: false
+    number_sections: yes
+header-includes:
+  - \setlength{\parindent}{1em}
+  - \usepackage{float}
+--- 
+  
+``` {r setup, echo = FALSE, message = FALSE, warning = FALSE}
+
+# set default chunk options
+knitr::opts_chunk$set(fig.width = 4, fig.height = 3, 
+                      echo = TRUE, message = FALSE, warning = FALSE)
+
+
+# load packages
+packages=c("stargazer", "here", "tidyr", "dplyr","stringr", "janitor", "tidyselect",  
+           "cowplot", "ggplot2", "tinytex", "datasets", "tibble")
+
+for (i in packages) {
+  if (require(i,character.only=TRUE)==FALSE) {
+    install.packages(i,repos='http://cran.us.r-project.org')
+  }
+  else {
+    require(i,character.only=TRUE)
+  }
+}
+
+#devtools::install_github('rstudio/rmarkdown')
+options(scipen=999) # not scientific notation
+
+
+```
+
+\noindent
+**Question 1:** Application of estimators based on treatment ignorability This exercise asks you to implement some of the techniques presented in Lectures 6-7. The goal is to estimate the causal effect of maternal smoking during pregnancy on infant birth weight using the treatment ignorability assumptions. The data are taken from the National Natality Detail Files, and the extract “SMOKING_EDS241.csv”' is a random sample of all births in Pennsylvania during 1989-1991. Each observation is a mother-infant pair. The key variables are:
+
+\noindent
+**The outcome and treatment variables are:**
+birthwgt=birth weight of infant in grams tobacco=indicator for maternal smoking 
+
+\noindent
+**The control variables are:** 
+mage (mother's age), meduc (mother's education), mblack (=1 if mother black), alcohol (=1 if consumed alcohol during pregnancy), first (=1 if first child), diabete (=1 if mother diabetic), anemia (=1 if mother anemic)
+
+\noindent
+**Import the data:**
+
+```{r}
+smoking <- read.csv(here("data", "SMOKING_EDS241.csv"))
+```
+
+\noindent
+**Question a:** What is the unadjusted mean difference in birth weight of infants with smoking and nonsmoking mothers? Under what hypothesis does this correspond to the average treatment effect of maternal smoking during pregnancy on infant birth weight? Provide some simple empirical evidence for or against this hypothesis.
+
+```{r}
+smoking_group <- smoking %>% 
+  group_by(tobacco) %>% 
+  summarize(mean_birthwgt = mean(birthwgt))
+
+smoking_group
+
+non_smoke_mean_wgt <- smoking_group %>% filter(tobacco == 0)
+smoke_mean_wgt <- smoking_group %>% filter(tobacco == 1)
+
+mean_wgt_diff <- non_smoke_mean_wgt$mean_birthwgt - smoke_mean_wgt$mean_birthwgt
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
