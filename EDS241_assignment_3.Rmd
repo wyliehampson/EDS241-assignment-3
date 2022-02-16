@@ -56,7 +56,7 @@ smoking <- read.csv(here("data", "SMOKING_EDS241.csv"))
 ```
 
 \noindent
-**Question a:** What is the unadjusted mean difference in birth weight of infants with smoking and nonsmoking mothers? Under what hypothesis does this correspond to the average treatment effect of maternal smoking during pregnancy on infant birth weight? Provide some simple empirical evidence for or against this hypothesis.
+**Question a:** What is the unadjusted mean difference in birth weight of infants with smoking and nonsmoking mothers? Under what assumption does this correspond to the average treatment effect of maternal smoking during pregnancy on infant birth weight? Provide some simple empirical evidence for or against this hypothesis.
 
 ```{r}
 smoking_group <- smoking %>% 
@@ -69,16 +69,24 @@ non_smoke_mean_wgt <- smoking_group %>% filter(tobacco == 0)
 smoke_mean_wgt <- smoking_group %>% filter(tobacco == 1)
 
 mean_wgt_diff <- non_smoke_mean_wgt$mean_birthwgt - smoke_mean_wgt$mean_birthwgt
+
+model_a <- lm(formula = meduc ~ tobacco, smoking)
+
+model_a_table <- broom::tidy(model_a) %>% 
+  dplyr::select(term, estimate, std.error, p.value) %>%
+  knitr::kable()
+
+broom::tidy(model_a)
 ```
 
 \noindent
-*The unadjusted mean difference in birth weight between babies from smoking and nonsmoking mothers is `r mean_wgt_diff` grams. This leads us to the hypothesis that on average maternal smoking causes a decrease in birth weights. The simple empirical evidence is the simple fact that on average babies from mothers who smoked had lower birth weights than those that did not smoke.*
+*The unadjusted mean difference in birth weight between babies from smoking and nonsmoking mothers is `r mean_wgt_diff` grams. This assumes that smoking is a randomly assigned treatment which we can see by regressing tobacco use on mothers education, is not true. By regressing tobacco use on mothers education we can see that on average mothers that use tobacco would be expected to have an education level lower by 1.32 with a very low p-value. This shows that there is a relationship between those covariates, meaning tobacco use is not randomly assigned.*
 
 \noindent
 **Question b:** Assume that maternal smoking is randomly assigned conditional on the observable covariates listed above. Estimate the effect of maternal smoking on birth weight using a linear regression. Report the estimated coefficient on tobacco and its standard error.
 
 ```{r}
-model_1 <- lm_robust(formula = birthwgt ~ tobacco, data = smoking)
+model_1 <- lm_robust(formula = birthwgt ~ ., data = smoking)
 
 model_1_table <- broom::tidy(model_1) %>% 
   dplyr::select(term, estimate, std.error, p.value) %>%
@@ -87,14 +95,55 @@ model_1_table <- broom::tidy(model_1) %>%
 model_1_table
 ```
 
+*The coefficient on tobacco is -244.54 with a standard error of 4.15.*
+
 \noindent
 **Question c:** Use the exact matching estimator to estimate the effect of maternal smoking on birth weight. For simplicity, consider the following covariates in your matching estimator: create a 0-1 indicator for mother's age (=1 if mage>=34), and a 0-1 indicator for mother's education (1 if meduc>=16), mother's race (mblack), and alcohol consumption indicator (alcohol). These 4 covariates will create 2x2x2x2 = 16 cells. Report the estimated average treatment effect of smoking on birthweight using the exact matching estimator and its linear regression analogue (Lecture 6, slides 12-14).
 
 ```{r}
 smoking <- smoking %>% 
   mutate(age_ind = ifelse((mage >= 34), 1, 0),
-         edu_ind = ifelse((meduc >= 16), 1, 0))
+         edu_ind = ifelse((meduc >= 16), 1, 0),
+         g = paste0(age_ind, edu_ind, mblack, alcohol))
+
+model_2 <- lm(formula = birthwgt ~ 
+                tobacco +
+                age_ind + edu_ind + mblack + alcohol +
+                factor(g),
+              data = smoking)
+
+model_2_table <- broom::tidy(model_2) %>%
+  dplyr::select(term, estimate, std.error, p.value) %>%
+  knitr::kable()
+
+model_2_table
 ```
+
+```{r}
+TIA_table <- smoking %>%
+  group_by(g, tobacco)%>% 
+  summarise(n_obs = n(),
+            birthwgt_mean= mean(birthwgt, na.rm = T))%>% #Calculate number of observations and birthwgt mean by g by treatment cells
+  gather(variables, values, n_obs:birthwgt_mean)%>% #Reshape data
+  mutate(variables = paste0(variables,"_",tobacco, sep=""))%>% #Combine the treatment and variables for reshaping
+  pivot_wider(id_cols = g, names_from = variables,values_from = values)%>% #Reshape data by treatment and g cell
+  ungroup()%>%  #Ungroup from g values
+  mutate(birthwgt_diff = birthwgt_mean_1 - birthwgt_mean_0, #calculate birthwgt_diff
+         w_ATE = (n_obs_0+n_obs_1)/(sum(n_obs_0)+sum(n_obs_1)),
+         w_ATT = n_obs_1/sum(n_obs_1))%>% #calculate weights
+  mutate_if(is.numeric, round, 2) #Round data
+
+
+stargazer(TIA_table, type= "text", summary = FALSE, digits = 2)
+
+# MULTIVARIATE MATCHING ESTIMATES OF ATE AND ATT
+ATE=sum((TIA_table$w_ATE)*(TIA_table$birthwgt_diff))
+ATE
+ATT=sum((TIA_table$w_ATT)*(TIA_table$birthwgt_diff))
+ATT
+```
+
+*The average treatment effect of smoking on birthweight using the exact matching estimator is -224.26 grams.*
 
 \noindent
 **Question d:** Estimate the propensity score for maternal smoking using a logit estimator and based on the
@@ -102,7 +151,12 @@ following specification: mother’s age, mother’s age squared, mother’s educ
 for mother’s race, and alcohol consumption. 
 
 ```{r}
-ps_model <- glm(tobacco ~ mage + (mage ^ 2) + meduc + mblack + alcohol, family = binomial(), data = smoking)
+smoking <- smoking %>% 
+  mutate(mage_sq = mage ^ 2)
+
+ps_model <- glm(tobacco ~ mage + mage_sq + meduc + mblack + alcohol,
+                family = binomial(),
+                data = smoking)
 summary(ps_model)
 EPS <- predict(ps_model, type = "response")
 PS_WGT <- (smoking$tobacco/EPS) + ((1-smoking$tobacco)/(1-EPS))
@@ -116,8 +170,11 @@ smoking on birth weight (Lecture 7, slide 12).
 ```{r}
 wls1 <- lm(formula = birthwgt ~ tobacco, data = smoking, weights = PS_WGT)
 
-se_models = starprep(wls1, stat = c("std.error"), se_type = "HC2", alpha = 0.05)
-stargazer(wls1, se = se_models, type="text")
+wls1_table <- broom::tidy(wls1) %>% 
+  dplyr::select(term, estimate, std.error, p.value) %>%
+  knitr::kable()
+
+wls1_table
 ```
 
 
